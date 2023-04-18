@@ -1,0 +1,99 @@
+version: '3.8'
+services:
+  db:
+    image: mysql:latest
+    command:
+      - --character-set-server=utf8mb4 
+      - --collation-server=utf8mb4_unicode_ci
+    restart: always
+    environment:
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix
+      MYSQL_ROOT_PASSWORD: secret
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - zabbix_network
+  
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      GF_INSTALL_PLUGINS: alexanderzobnin-zabbix-app
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    networks:
+      - zabbix_network
+
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:latest
+    restart: always
+    environment:
+      DB_SERVER_HOST: db
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix
+      MYSQL_ROOT_PASSWORD: secret
+      ZBX_JAVAGATEWAY: zabbix-java-gateway
+    volumes:
+      - zabbix_server_data:/var/lib/zabbix
+    ports:
+      - "10051:10051"
+    depends_on:
+      - db
+    networks:
+      - zabbix_network
+
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-mysql
+    restart: always
+    environment:
+      DB_SERVER_HOST: db
+      MYSQL_DATABASE: zabbix
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix
+      MYSQL_ROOT_PASSWORD: secret
+      PHP_TZ: Europe/Dublin
+    ports:
+      - "80:8080"
+      - "443:8443"
+    depends_on:
+      - db
+      - zabbix-server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - db
+      - zabbix-server
+    networks:
+      - zabbix_network
+
+  zabbix-agent:
+    image: zabbix/zabbix-agent
+    ports:
+      - "10050:10050"
+    privileged: true
+    pid: "host"
+    networks:
+      - zabbix_network
+
+  zabbix-java-gateway:
+    image: zabbix/zabbix-java-gateway:latest
+    restart: always
+    networks:
+      - zabbix_network
+
+volumes:
+  db_data:
+  zabbix_server_data:
+
+networks:
+  zabbix_network:
