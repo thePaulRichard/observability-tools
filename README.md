@@ -21,8 +21,6 @@ To use the observability tools in this repository, you'll need to have some basi
 
 The following monitoring and observability tools are currently being planned for inclusion in this repository:
 
-- Prometheus: A powerful open-source monitoring and alerting system.
-- Grafana: A popular platform for visualizing and analyzing metrics and logs.
 - Elasticsearch: A distributed, RESTful search and analytics engine.
 - Kibana: A data visualization and exploration tool for Elasticsearch.
 
