@@ -1,99 +1,130 @@
-version: '3.8'
+version: '3'
+
 services:
-  db:
-    image: mysql:latest
-    command:
-      - --character-set-server=utf8mb4 
-      - --collation-server=utf8mb4_unicode_ci
-    restart: always
-    environment:
-      MYSQL_DATABASE: zabbix
-      MYSQL_USER: zabbix
-      MYSQL_PASSWORD: zabbix
-      MYSQL_ROOT_PASSWORD: secret
-    volumes:
-      - db_data:/var/lib/mysql
+  node-exporter:
+    image: prom/node-exporter
+    container_name: node-exporter
+    restart: unless-stopped
     networks:
-      - zabbix_network
-  
+      - prometheus
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.logind'
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    restart: unless-stopped
+    networks:
+      - prometheus
+      - grafana
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana
     container_name: grafana
-    restart: always
+    restart: unless-stopped
+    networks:
+      - grafana
+      - prometheus
+      - zabbix
+      - db
     ports:
       - "3000:3000"
     environment:
-      GF_INSTALL_PLUGINS: alexanderzobnin-zabbix-app
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-    networks:
-      - zabbix_network
-
-  zabbix-server:
-    image: zabbix/zabbix-server-mysql:latest
-    restart: always
-    environment:
-      DB_SERVER_HOST: db
-      MYSQL_DATABASE: zabbix
-      MYSQL_USER: zabbix
-      MYSQL_PASSWORD: zabbix
-      MYSQL_ROOT_PASSWORD: secret
-      ZBX_JAVAGATEWAY: zabbix-java-gateway
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=grafana
+      - GF_INSTALL_PLUGINS=alexanderzobnin-zabbix-app
     volumes:
-      - zabbix_server_data:/var/lib/zabbix
-    ports:
-      - "10051:10051"
-    depends_on:
-      - db
-    networks:
-      - zabbix_network
+      - ./grafana:/etc/grafana/provisioning/datasources
+      - grafana_data:/var/lib/grafana
 
-  zabbix-web:
-    image: zabbix/zabbix-web-nginx-mysql
-    restart: always
+  zabbix-server-pgsql:
+    image: zabbix/zabbix-server-pgsql
+    container_name: zabbix-server-pgsql
+    restart: unless-stopped
+    networks:
+      - zabbix
+      - db
     environment:
-      DB_SERVER_HOST: db
-      MYSQL_DATABASE: zabbix
-      MYSQL_USER: zabbix
-      MYSQL_PASSWORD: zabbix
-      MYSQL_ROOT_PASSWORD: secret
-      PHP_TZ: Europe/Dublin
+      - DB_SERVER_HOST=db
+    env_file:
+      - ./.env
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+  zabbix-web-nginx-pgsql:
+    image: zabbix/zabbix-web-nginx-pgsql
+    container_name: zabbix-web-nginx-pgsql
+    restart: unless-stopped
+    networks:
+      - zabbix
+      - db
+    env_file:
+      - ./.env
     ports:
       - "80:8080"
-      - "443:8443"
-    depends_on:
-      - db
-      - zabbix-server
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-    depends_on:
-      - db
-      - zabbix-server
-    networks:
-      - zabbix_network
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
   zabbix-agent:
     image: zabbix/zabbix-agent
-    ports:
-      - "10050:10050"
-    privileged: true
-    pid: "host"
+    container_name: zabbix-agent
+    restart: unless-stopped
     networks:
-      - zabbix_network
+      - zabbix
+      - db
+    environment:
+      - ZBX_SERVER_HOST=zabbix-server-pgsql
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
-  zabbix-java-gateway:
-    image: zabbix/zabbix-java-gateway:latest
-    restart: always
+  db:
+    image: postgres:14-alpine
+    container_name: zabbix-db
+    stop_grace_period: 1m
+    ports:
+      - "5432:5432"
     networks:
-      - zabbix_network
+      - zabbix
+      - grafana
+    environment:
+      - TZ=UTC
+    env_file:
+      - ./.env
+    volumes:
+      - ./zbx_env/var/lib/postgresql/data:/var/lib/postgresql/data:rw
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
 volumes:
-  db_data:
-  zabbix_server_data:
+  prometheus_data:
+  grafana_data:
+  zabbix-db:
 
 networks:
-  zabbix_network:
+  prometheus:
+  grafana:
+  zabbix:
+  db:

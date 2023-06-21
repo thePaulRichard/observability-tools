@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+
+scrape_configs:
+- job_name: prometheus
+  honor_timestamps: true
+  metrics_path: /metrics
+  scheme: http
+  static_configs:
+  - targets: 
+    - prometheus:9090
+
+- job_name: node
+  honor_timestamps: true
+  metrics_path: /metrics
+  scheme: http
+  static_configs:
+  - targets: 
+    - node-exporter:9100
+
+- job_name: ubuntu
+  honor_timestamps: true
+  metrics_path: /metrics
+  scheme: http
+  static_configs:
+  - targets: 
+    - 10.149.13.170:9100
+
+- job_name: windows
+  honor_timestamps: true
+  metrics_path: /metrics
+  scheme: http
+  static_configs:
+  - targets: 
+    - 10.149.13.180:9182
+
+rule_files:
+  - /etc/prometheus/*.rules.yml
